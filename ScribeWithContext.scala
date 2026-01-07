@@ -7,24 +7,26 @@ class Log private (
     orig: Scribe[IO],
     loc: IOLocal[Map[String, String]]
 ) extends Scribe[IO]:
+  def annotate[A](key: String, value: String)(io: IO[A]): IO[A] =
+    loc
+      .modify(m => (m.updated(key, value), m))
+      .flatMap: prev =>
+        io.guarantee(loc.set(prev))
 
-  def annotate[A](key: String, value: String)(io: IO[A]) =
-    loc.modify(m => (m.updated(key, value), m)).flatMap { prev =>
-      io.guarantee(loc.set(prev))
-    }
+  def annotate[A](context: Map[String, String])(io: IO[A]): IO[A] =
+    loc
+      .modify(m => (m ++ context, m))
+      .flatMap: prev =>
+        io.guarantee(loc.set(prev))
 
-  def annotate[A](context: Map[String, String])(io: IO[A]) =
-    loc.modify(m => (m ++ context, m)).flatMap { prev =>
-      io.guarantee(loc.set(prev))
-    }
+  def getContext: IO[Map[String, String]] = loc.get
 
   override def log(record: => LogRecord): IO[Unit] =
-    loc.get.flatMap { context =>
+    loc.get.flatMap: context =>
       val newRecord = context.foldLeft(record) { case (r, (k, v)) =>
         r.update(k, () => v)
       }
       orig.log(newRecord)
-    }
 end Log
 
 object Log:
